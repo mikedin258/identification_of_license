@@ -1,0 +1,301 @@
+#include<opencv2/opencv.hpp>
+#include<iostream>
+#include<math.h>
+#include <io.h>
+#include < fstream>
+#include < string>
+#define EXPORT __declspec(dllexport)
+using namespace std;
+using namespace cv;
+void compare1(Mat src, Mat dst);
+Mat cv_resize(Mat src, int wide);
+void on_Matching(Mat g_srcImage, Mat g_templateImage);
+//void cropRotateImage(Mat src, Mat des, double angle);
+Mat equalizeIntensityHist(Mat inputImage);
+Mat equalizeChannelHist(Mat inputImage);
+void Poshe(cv::Mat& src, cv::Mat& dst, cv::Mat& newsrc_draw, float s, float k);
+void BERF(cv::Mat& src, cv::Mat& dst, int step_r, int step_c, int step_levels, int large_dir);
+void Histogram_equalization(cv::Mat& src, cv::Mat& dst);
+void getFiles(string path, vector<string>& files);
+extern "C"
+{
+	EXPORT int main();
+	EXPORT void test();
+
+}
+void test()
+{
+	cout << "success" << endl;
+}
+int main()
+{
+	char ad[300] = { '\0' };
+	string outpath = "D:\\imgdata\\photos\\security_cut\\ds.jpg";
+	Mat srcImg;
+		srcImg = imread("D:\\imgdata\\photos\\security_cut\\dst1.jpg");
+	    srcImg = cv_resize(srcImg, 750);
+		namedWindow("source", CV_WINDOW_AUTOSIZE);
+		imshow("source", srcImg);
+		waitKey(0);
+		Mat srcImg1;
+		srcImg.copyTo(srcImg1);
+		Mat srcImg2;
+		srcImg.copyTo(srcImg2);
+		Mat Imgmask(srcImg.size(), CV_8U, Scalar(0));
+
+		//medianBlur(srcImg, srcImg, 5);
+		GaussianBlur(srcImg, srcImg, Size(9, 9), 2, 2);
+		/*namedWindow("gaussian", CV_WINDOW_AUTOSIZE);
+		imshow("gaussian", srcImg);
+		waitKey(0);*/
+		//标记背景
+		rectangle(Imgmask, Point(1, 1), Point(srcImg.cols - 1, srcImg.rows - 1), Scalar(255), 1);
+		//标记身份证
+		rectangle(Imgmask, Point(srcImg.cols / 2 - 40, srcImg.rows / 2 - 20), Point(srcImg.cols / 2 + 40, srcImg.rows / 2 + 20), Scalar(128), 2);
+		/*namedWindow("imgmask", CV_WINDOW_AUTOSIZE);
+		imshow("imgmask", Imgmask);
+		waitKey(0);*/
+		Imgmask.convertTo(Imgmask, CV_32S);
+		watershed(srcImg, Imgmask);
+		Mat mask1(srcImg.size(), CV_8U, Scalar(0)), mas;
+		Imgmask.convertTo(mask1, CV_8U);
+		mask1.copyTo(mas);
+		namedWindow("mas", CV_WINDOW_AUTOSIZE);
+		imshow("mas", mas);
+		waitKey(0);
+		//resize(mas, mas, Size(0, 0), 0.5, 0.5);
+		//destroyAllWindows();
+		threshold(mask1, mask1, 0, 255, CV_THRESH_BINARY_INV | CV_THRESH_OTSU);
+		rectangle(mask1, Point(1, 1), Point(srcImg.cols - 1, srcImg.rows - 1), Scalar(0), 1);
+		rectangle(mask1, Point(0, 0), Point(srcImg.cols - 2, srcImg.rows - 2), Scalar(0), 1);
+		Mat t_mat = cv::Mat::zeros(2, 3, CV_32FC1);
+		int row = srcImg.rows;
+		int col = srcImg.cols;
+		int w = sqrt(row * row + col * col);
+		Mat ROIsrc3(w, w, CV_8UC3, Scalar(0, 0, 0));
+		Mat ROIsrc4;
+		ROIsrc3.copyTo(ROIsrc4);
+		t_mat.at<float>(0, 0) = 1;
+		t_mat.at<float>(0, 2) = (w - col) / 2; //水平平移量
+		t_mat.at<float>(1, 1) = 1;
+		t_mat.at<float>(1, 2) = (w - row) / 2;
+
+		vector<vector<Point>>contours;
+		vector<Vec4i>hierarcy;
+		findContours(mask1, contours, hierarcy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);//找出轮廓
+		//cout << contours.size() <<"  contours.size()"<< endl;
+
+			//获取坐标
+		CvBox2D rect1;
+		int s = 0;
+		int k = 0;
+		CvPoint2D32f rectpoint[4];
+		for (int i = 0; i < contours.size(); i++)
+		{
+			CvBox2D rect = minAreaRect(Mat(contours[i]));
+			if (rect.size.height * rect.size.width > s)
+			{
+				s = rect.size.height * rect.size.width;
+				rect1 = minAreaRect(Mat(contours[i]));
+			}
+		}
+		//cout << float(rect1.size.height / rect1.size.width) << endl;
+		//cout << float(rect1.size.width / rect1.size.height) << endl;
+		if (rect1.size.height > rect1.size.width)
+		{
+
+			/*cout << rect1.size.height << " " << rect1.size.width<<endl;
+			cout << float(rect1.size.width / rect1.size.height) << endl;*/
+			if (float(rect1.size.height / rect1.size.width) < 1.4|| float(rect1.size.height / rect1.size.width) >2.1) {
+				Mat kern = (Mat_<char>(3, 3) << 0, -1, 0,
+					-1, 5, -1,
+					0, -1, 0);
+				srcImg2 = cv_resize(srcImg2, 1500);
+				imwrite(outpath, srcImg2);
+				return 0;
+			}
+
+		}
+		else
+		{
+
+			if (float(rect1.size.width / rect1.size.height) < 1.4|| float(rect1.size.width / rect1.size.height) > 2.1)
+			{
+				Mat kern = (Mat_<char>(3, 3) << 0, -1, 0,
+					-1, 5, -1,
+					0, -1, 0);
+				srcImg2 = cv_resize(srcImg2, 1500);
+				imwrite(outpath, srcImg2);
+				return 0;
+			}
+		}
+		cvBoxPoints(rect1, rectpoint);
+		float angle = rect1.angle;
+
+		int line1 = sqrt((rectpoint[1].y - rectpoint[0].y) * (rectpoint[1].y - rectpoint[0].y) + (rectpoint[1].x - rectpoint[0].x) * (rectpoint[1].x - rectpoint[0].x));
+		int line2 = sqrt((rectpoint[3].y - rectpoint[0].y) * (rectpoint[3].y - rectpoint[0].y) + (rectpoint[3].x - rectpoint[0].x) * (rectpoint[3].x - rectpoint[0].x));
+		//保证横着放
+		if (line1 > line2)
+			angle = 90 + angle;
+
+		//抠身份证的图
+		Mat ROIsrc(row, col, CV_8UC3, Scalar(0, 0, 0));
+		warpAffine(ROIsrc, ROIsrc3, t_mat, ROIsrc3.size());
+		/*namedWindow("ROIsrc3", CV_WINDOW_AUTOSIZE);
+		imshow("ROIsrc3", ROIsrc3);
+		waitKey(0);*/
+		for (int j = 0; j < 4; j++)
+		{
+			rectpoint[j].x = rectpoint[j].x + (w - col) / 2;
+			rectpoint[j].y = rectpoint[j].y + (w - row) / 2;
+		}
+		for (int j = 0; j < 4; j++)
+		{
+			line(ROIsrc3, rectpoint[j], rectpoint[(j + 1) % 4], (255, 255, 255), 2, 8);
+		}
+		Mat ROIsrc1(srcImg.rows, srcImg.cols, CV_8UC3);
+		srcImg1.copyTo(ROIsrc1);
+		warpAffine(ROIsrc1, ROIsrc4, t_mat, ROIsrc4.size());
+		/*namedWindow("ROIsrc1", CV_WINDOW_AUTOSIZE);
+		imshow("ROIsrc1", ROIsrc3);
+		waitKey(0);*/
+		//旋转ROI
+		Mat ratateimg(ROIsrc3.rows, ROIsrc3.cols, CV_8UC1);
+		ratateimg.setTo(0);
+		Point2f center = rect1.center;
+		center.x = center.x + (w - col) / 2;
+		center.y = center.y + (w - row) / 2;
+		Mat M2 = getRotationMatrix2D(center, angle, 1);//计算旋转加缩放的变换矩阵
+		warpAffine(ROIsrc3, ratateimg, M2, ROIsrc3.size(), 1, 0, Scalar(0, 0, 0));//仿射变换
+		/*namedWindow("ratate1", CV_WINDOW_AUTOSIZE);
+		imshow("ratate1",ratateimg);
+		waitKey(0);*/
+		Mat ratateimg1(ROIsrc3.rows, ROIsrc3.cols, CV_8UC1);
+		warpAffine(ROIsrc4, ratateimg1, M2, ROIsrc4.size(), 1, 0, Scalar(0, 0, 0));//仿射变换
+		/*namedWindow("ratate2", CV_WINDOW_AUTOSIZE);
+		imshow("ratate2", ratateimg1);
+		waitKey(0);*/
+		Mat mask2;
+		cvtColor(ratateimg, mask2, CV_BGR2GRAY);
+		threshold(mask2, mask2, 0, 255, CV_THRESH_BINARY | CV_THRESH_OTSU);
+		//namedWindow("旋转之后2", CV_WINDOW_AUTOSIZE);
+		//imshow("旋转之后", mask2);
+		vector<vector<Point>>contours2;
+		findContours(mask2, contours2, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+		//cout << " "<<contours2.size() << endl;
+		Rect rect = boundingRect(Mat(contours2[0]));
+		Mat dst = ratateimg1(rect);
+		float x = dst.cols;
+		float y = dst.rows;
+		Mat kern = (Mat_<char>(3, 3) << 0, -1, 0,
+			-1, 5, -1,
+			0, -1, 0);
+		//filter2D(dst, dst, dst.depth(), kern);
+		float width = dst.cols;
+		float height = dst.rows;
+		//dst = cv_resize(dst, 1500);
+		Mat channel_color_dst = dst;
+		imwrite(outpath, channel_color_dst);
+		dst = cv_resize(dst, 500);
+		namedWindow("result", CV_WINDOW_AUTOSIZE);
+		imshow("result", dst);
+		waitKey(0);
+	return 0;
+
+	
+}
+void compare1(Mat src, Mat dst)
+{
+	cvtColor(src, src, CV_BGR2HSV);
+	cvtColor(dst, dst, CV_BGR2HSV);
+	MatND hist_src;
+	MatND hist_srctest1;
+	int h_bins = 50;
+	int s_bins = 60;
+	int histSize[] = { h_bins,s_bins };
+	int channels[] = { 0,1 };
+	float h_ranges[] = { 0,180 };
+	float s_ranges[] = { 0,256 };
+	const float* ranges[] = { h_ranges, s_ranges };
+	calcHist(&src, 1, channels, Mat(), hist_src, 2, histSize, ranges, true, false);
+	normalize(hist_src, hist_src, 0, 1, NORM_MINMAX, -1, Mat());
+
+	calcHist(&dst, 1, channels, Mat(), hist_srctest1, 2, histSize, ranges, true, false);
+	normalize(hist_srctest1, hist_srctest1, 0, 1, NORM_MINMAX, -1, Mat());
+
+	double src_srctest1 = compareHist(hist_src, hist_srctest1, CV_COMP_CORREL);
+	cout << "result: " << src_srctest1 << endl;
+	namedWindow("src", CV_WINDOW_AUTOSIZE);
+	imshow("src", src);
+	waitKey(0);
+	namedWindow("dst", CV_WINDOW_AUTOSIZE);
+	imshow("dst", dst);
+	waitKey(0);
+}
+Mat cv_resize(Mat src, int length )
+{
+	float width = src.cols;
+	float height = src.rows;
+	if (width > height)
+	{
+		float n = float(width / length);
+		height = float(height / n);
+		//cout << "height: " << height << endl;
+		resize(src, src, Size(int(length), int(height)), 0, 0);
+	}
+	else if (height >= width)
+	{
+		float n = float(height / length);
+		//cout << width << endl << height << endl << n << endl;
+		width = float(width / n);
+		//cout << "height: " << height << endl;
+		resize(src, src, Size(int(width), int(length)), 0, 0);
+	}
+	return src;
+}
+void on_Matching(Mat g_srcImage, Mat g_templateImage)
+{
+	Mat srcImage, g_resultImage;
+	g_srcImage.copyTo(srcImage);
+	int resultImage_cols = g_srcImage.cols - g_templateImage.cols + 1;
+	int resultImage_rows = g_srcImage.rows - g_templateImage.rows + 1;
+	g_resultImage.create(resultImage_cols, resultImage_rows, CV_32FC1);
+
+	matchTemplate(g_srcImage, g_templateImage, g_resultImage, TM_CCORR_NORMED);
+	//normalize(g_resultImage, g_resultImage, 0, 1, NORM_MINMAX, -1, Mat());
+
+	double minValue, maxValue;
+	Point minLocation, maxLocation, matchLocation;
+	minMaxLoc(g_resultImage, &minValue, &maxValue, &minLocation, &maxLocation, Mat());
+	cout << "maxvalue: " << maxValue;
+	matchLocation = maxLocation;
+	rectangle(g_srcImage, matchLocation, Point(matchLocation.x + g_templateImage.cols, matchLocation.y + g_templateImage.rows), Scalar(0, 0, 255), 2, 8, 0);
+	rectangle(g_resultImage, matchLocation, Point(matchLocation.x + g_templateImage.cols, matchLocation.y + g_templateImage.rows), Scalar(0, 0, 255), 2, 8, 0);
+	namedWindow("WINDOW_NAME1", CV_WINDOW_AUTOSIZE);
+	imshow("WINDOW_NAME1", g_srcImage);
+	waitKey(0);
+}
+void getFiles(string path, vector<string>& files)
+{
+	intptr_t   hFile = 0;//intptr_t和uintptr_t是什么类型:typedef long int/ typedef unsigned long int
+	struct _finddata_t fileinfo;
+	string p;
+	if ((hFile = _findfirst(p.assign(path).append("\\*").c_str(), &fileinfo)) != -1)//assign方法可以理解为先将原字符串清空，然后赋予新的值作替换。
+	{
+		do
+		{
+			if ((fileinfo.attrib & _A_SUBDIR))//是否为文件夹
+			{
+				if (strcmp(fileinfo.name, ".") != 0 && strcmp(fileinfo.name, "..") != 0)
+					getFiles(p.assign(path).append("\\").append(fileinfo.name), files);//子文件夹下递归访问
+			}
+			else//非文件夹
+			{
+				files.push_back(p.assign(path).append("\\").append(fileinfo.name));
+			}
+		} while (_findnext(hFile, &fileinfo) == 0);
+		_findclose(hFile);
+	}
+}
+
+
